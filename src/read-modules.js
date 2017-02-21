@@ -1,3 +1,4 @@
+import traverse from 'babel-traverse';
 import Module from './module';
 
 import { expandFilePatterns } from './utility';
@@ -23,7 +24,7 @@ class ModuleParser {
 		this.ast.program.body.forEach((declaration) => {
 			switch (declaration.type) {
 				case 'ImportDeclaration':
-					this.handleImportDeclaration(module, declaration);
+					this.handleImportDeclaration(module, declaration, this.ast);
 					break;
 				case 'ExportAllDeclaration':
 					this.handleExportAllDeclaration(module, declaration);
@@ -40,7 +41,7 @@ class ModuleParser {
 		return module;
 	}
 
-	handleImportDeclaration(module, declaration) {
+	handleImportDeclaration(module, declaration, ast) {
 		const rawSourcePath = declaration.source.value;
 		const sourcePath = this.resolveImportModulePath(module.path, rawSourcePath);
 
@@ -69,7 +70,14 @@ class ModuleParser {
 					module.addDefaultImport({ sourcePath, rawSourcePath, lineNumber });
 					break;
 				case 'ImportNamespaceSpecifier':
-					module.addBatchImport({ sourcePath, rawSourcePath, lineNumber });
+
+					// todo: make configurable
+					const importNamespaceName = specifier.local.name;
+					const exportNames = findUsedExports(ast, importNamespaceName);
+					exportNames.forEach(function (exportName) {
+						module.addNamedImport({ exportName, sourcePath, rawSourcePath, lineNumber });
+					});
+
 					break;
 			}
 		});
@@ -175,6 +183,21 @@ class ModuleParser {
 		return modulePath;
 	}
 
+}
+
+function findUsedExports(ast, importNamespaceName) {
+	var exportNames = [];
+	traverse(ast, {
+	  enter(path) {
+	    if (
+	      path.node.type === "MemberExpression" &&
+	      path.node.object.name === importNamespaceName
+	    ) {
+	    	exportNames.push(path.node.property.name);
+	    }
+	  }
+	});
+	return exportNames;
 }
 
 export function readModules({ cwd, sources, aliases, resolveModulePath, fileReader, babel: userBabelOptions }) {
